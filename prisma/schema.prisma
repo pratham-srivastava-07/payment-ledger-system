@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  USER
+  PLATFORM
+  PROVIDER
+  ESCROW
+}
+
+enum TransactionType {
+  PAYMENT
+  REFUND
+  ADJUSTMENT
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum PaymentProvider {
+  STRIPE
+  RAZORPAY
+  PAYPAL
+}
+
+model Account {
+  id        String      @id @default(uuid())
+  name      String
+  type      AccountType
+  currency  String
+  createdAt DateTime    @default(now())
+
+  ledgerEntries LedgerEntry[]
+}
+
+model Transaction {
+  id          String            @id @default(uuid())
+  externalRef String?           @unique
+  type        TransactionType
+  status      TransactionStatus @default(PENDING)
+  amount      Decimal
+  currency    String
+  createdAt   DateTime          @default(now())
+
+  entries LedgerEntry[]
+}
+
+model LedgerEntry {
+  id            String @id @default(uuid())
+  transactionId String
+  accountId     String
+
+  debit  Decimal @default(0)
+  credit Decimal @default(0)
+
+  createdAt DateTime @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+  account     Account     @relation(fields: [accountId], references: [id])
+
+  @@index([transactionId])
+  @@index([accountId])
+}
+
+model PaymentEvent {
+  id              String          @id @default(uuid())
+  provider        PaymentProvider
+  externalEventId String          @unique
+  idempotencyKey  String          @unique
+  payload         Json
+  status          String          @default("RECEIVED") // RECEIVED, PROCESSED, FAILED
+  processed       Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+
+  @@index([externalEventId])
+}
+
+model ReconciliationReport {
+  id              String          @id @default(uuid())
+  provider        PaymentProvider
+  expectedBalance Decimal
+  actualBalance   Decimal
+  discrepancy     Decimal
+  createdAt       DateTime        @default(now())
+}
+
+
+model Idempotency {
+  key             String   @id
+  requestPath     String
+  requestBodyHash String
+  responseStatus  Int?
+  responseJson    Json?
+  createdAt       DateTime @default(now())
+  lockedAt        DateTime?
+}
