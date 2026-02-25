@@ -1,9 +1,70 @@
 import { Request, Response } from "express";
 import { PaymentService } from "../services/PaymentService.service";
 
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     PaymentRequest:
+ *       type: object
+ *       required:
+ *         - paymentId
+ *         - amount
+ *         - provider
+ *       properties:
+ *         paymentId:
+ *           type: string
+ *           description: Unique ID for the payment (idempotency key)
+ *         amount:
+ *           type: number
+ *           description: Amount to charge
+ *         provider:
+ *           type: string
+ *           enum: [STRIPE, PAYPAL]
+ *           description: Payment provider to use
+ *         currency:
+ *           type: string
+ *           default: USD
+ *           description: Currency for the payment
+ *     RefundRequest:
+ *       type: object
+ *       required:
+ *         - paymentId
+ *         - provider
+ *         - amount
+ *       properties:
+ *         paymentId:
+ *           type: string
+ *           description: Original payment ID to refund
+ *         provider:
+ *           type: string
+ *           enum: [STRIPE, PAYPAL]
+ *         amount:
+ *           type: number
+ */
 export class PaymentController {
-  constructor(private paymentService: PaymentService) {}
+  constructor(private paymentService: PaymentService) { }
 
+  /**
+   * @openapi
+   * /payments:
+   *   post:
+   *     tags: [Payments]
+   *     summary: Process a new payment
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             $ref: '#/components/schemas/PaymentRequest'
+   *     responses:
+   *       200:
+   *         description: Payment processed successfully
+   *       400:
+   *         description: Missing required fields
+   *       500:
+   *         description: Server error
+   */
   createPayment = async (req: Request, res: Response) => {
     try {
       const { paymentId, amount, provider, currency } = req.body;
@@ -24,6 +85,26 @@ export class PaymentController {
     }
   };
 
+  /**
+   * @openapi
+   * /refunds:
+   *   post:
+   *     tags: [Payments]
+   *     summary: Process a refund
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             $ref: '#/components/schemas/RefundRequest'
+   *     responses:
+   *       200:
+   *         description: Refund processed successfully
+   *       400:
+   *         description: Missing required fields
+   *       500:
+   *         description: Server error
+   */
   refundPayment = async (req: Request, res: Response) => {
     try {
       const { paymentId, provider, amount } = req.body;
