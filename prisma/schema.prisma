@@ -14,6 +14,38 @@ enum AccountType {
   ESCROW
 }
 
+enum PaymentStatus {
+  CREATED
+  PROCESSING
+  SUCCEDDED
+  FAILED 
+  UNKNOWN
+}
+
+ enum OutboxEventType {
+    PAYMENT_CREATED
+    PAYMENT_SUCCEEDED
+    PAYMENT_FAILED
+    REFUND_CREATED
+    REFUND_SUCCEEDED
+    REFUND_FAILED
+    LEDGER_POSTED
+    RECONCILIATION_COMPLETED
+  }
+
+enum ProcessorAttempt {
+  SUCCESS
+  FAILED
+  CREATED
+  UNKNOWN
+}
+
+enum OutboxStatus {
+    PENDING
+    PUBLISHED
+    FAILED
+  }
+
 enum TransactionType {
   PAYMENT
   REFUND
@@ -23,6 +55,12 @@ enum TransactionType {
 enum TransactionStatus {
   PENDING
   COMPLETED
+  FAILED
+}
+
+enum RefundStatus {
+  SUCCESS
+  PROCESSING
   FAILED
 }
 
@@ -46,6 +84,9 @@ model Transaction {
   id          String            @id @default(uuid())
   externalRef String?           @unique
   type        TransactionType
+  paymentId   String
+  payment     Payment?     
+  refund      Refund?
   status      TransactionStatus @default(PENDING)
   amount      Decimal
   currency    String
@@ -103,3 +144,53 @@ model Idempotency {
   createdAt       DateTime @default(now())
   lockedAt        DateTime?
 }
+
+model Payment {
+  id    String   @id @unique
+  idempotencyKey  String   @unique
+  amountMinor    Float  
+  currency      String 
+  provider      PaymentProvider
+  status       PaymentStatus
+  processingAttempts  ProcessorAttempt[]
+  refunds         Refund[]
+  ledgerTransactionId  String?         @unique
+  ledgerTransaction    Transaction?    @relation(fields: [ledgerTransactionId], references: [id])
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime
+}
+
+model Refund {
+  id             String      @id @unique @default(uuid())
+  paymentId      String     
+  payment        Payment   @relation(fields: [paymentId], references: [id])
+  amountMinor    BigInt
+  status         RefundStatus
+  ledgerTransactionId     String?    @unique
+  ledgerTransaction   Transaction?     @relation(fields: [ledgerTransactionId], references: [id])
+  createdAt          DateTime
+}
+
+
+model OutboxEvent {
+    id            String          @id @default(uuid())
+
+    eventType     OutboxEventType
+    aggregateType String
+    aggregateId   String
+
+    payload       Json
+
+    status        OutboxStatus    @default(PENDING)
+    attempts      Int             @default(0)
+    availableAt   DateTime        @default(now())
+    publishedAt   DateTime?
+    lastError     String?
+
+    createdAt     DateTime        @default(now())
+    updatedAt     DateTime        @updatedAt
+
+    @@index([status, availableAt])
+    @@index([aggregateType, aggregateId])
+    @@index([eventType, createdAt])
+  }
