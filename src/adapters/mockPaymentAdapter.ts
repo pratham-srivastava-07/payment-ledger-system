@@ -4,7 +4,10 @@ import { prisma } from "../config/prisma";
 import { fingerprint } from "../domain/operation";
 
 export class MockPaymentAdapter implements PaymentAdapter {
-  constructor(private provider: PaymentProvider, private db: PrismaClient = prisma) {}
+  constructor(
+    private provider: PaymentProvider,
+    private db: PrismaClient = prisma,
+  ) {}
 
   getProvider() {
     return this.provider;
@@ -23,30 +26,49 @@ export class MockPaymentAdapter implements PaymentAdapter {
     if (!row || row.provider !== this.provider) return null;
     return row.outcome === "SUCCEEDED"
       ? { status: "SUCCEEDED", externalRef: row.externalRef }
-      : { status: "FAILED", externalRef: row.externalRef, error: "Mock processor declined operation" };
+      : {
+          status: "FAILED",
+          externalRef: row.externalRef,
+          error: "Mock processor declined operation",
+        };
   }
 
-  private async execute(kind: string, data: ChargeData, originalRef?: string): Promise<ProcessorResult> {
-    const requestHash = fingerprint([this.provider, kind, data.amountMinor.toString(), data.currency, originalRef ?? null]);
+  private async execute(
+    kind: string,
+    data: ChargeData,
+    originalRef?: string,
+  ): Promise<ProcessorResult> {
+    const requestHash = fingerprint([
+      this.provider,
+      kind,
+      data.amountMinor.toString(),
+      data.currency,
+      originalRef ?? null,
+    ]);
     if (data.scenario === "TIMEOUT_BEFORE" && data.invocation === 1) {
       throw new Error("Mock timeout before processor execution");
     }
     // This is a separate committed write, just as a real provider owns separate durable state.
     await this.db.mockProcessorOperation.createMany({
-      data: [{
-        id: data.idempotencyKey,
-        provider: this.provider,
-        kind,
-        requestHash,
-        amountMinor: data.amountMinor,
-        currency: data.currency,
-        externalRef: `mock_${fingerprint([this.provider, data.idempotencyKey]).slice(0, 32)}`,
-        outcome: data.scenario === "DECLINE" ? "FAILED" : "SUCCEEDED",
-      }],
+      data: [
+        {
+          id: data.idempotencyKey,
+          provider: this.provider,
+          kind,
+          requestHash,
+          amountMinor: data.amountMinor,
+          currency: data.currency,
+          externalRef: `mock_${fingerprint([this.provider, data.idempotencyKey]).slice(0, 32)}`,
+          outcome: data.scenario === "DECLINE" ? "FAILED" : "SUCCEEDED",
+        },
+      ],
       skipDuplicates: true,
     });
-    const row = await this.db.mockProcessorOperation.findUniqueOrThrow({ where: { id: data.idempotencyKey } });
-    if (row.requestHash !== requestHash) throw new Error("Processor key reused for a different operation");
+    const row = await this.db.mockProcessorOperation.findUniqueOrThrow({
+      where: { id: data.idempotencyKey },
+    });
+    if (row.requestHash !== requestHash)
+      throw new Error("Processor key reused for a different operation");
     if (data.scenario === "TIMEOUT_AFTER" && data.invocation === 1) {
       throw new Error("Mock response lost after processor execution");
     }
@@ -59,6 +81,9 @@ export class MockPaymentAdapter implements PaymentAdapter {
       where: { provider: this.provider, currency, outcome: "SUCCEEDED" },
       _sum: { amountMinor: true },
     });
-    return rows.reduce((sum, row) => sum + (row.kind === "CHARGE" ? 1n : -1n) * (row._sum.amountMinor ?? 0n), 0n);
+    return rows.reduce(
+      (sum, row) => sum + (row.kind === "CHARGE" ? 1n : -1n) * (row._sum.amountMinor ?? 0n),
+      0n,
+    );
   }
 }

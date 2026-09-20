@@ -2,7 +2,23 @@
 
 Review date: 2026-09-17. Scope: the code in this checkout, not the proposed feature inventory.
 
-This is an implementation guide for the project owner. No application behavior was changed during this review. Unchecked items are unfinished or lack the evidence required to call them complete. Complete each item with a code reference and a reproducible verification result, not just a feature name.
+This document preserves the original review and tracks implementation progress. Sections 1, 2 and the original verification baseline describe the 2026-09-17 checkout; they are historical findings, not a description of the current implementation. Unchecked items remain unfinished or lack sufficient evidence.
+
+## Current implementation — 2026-09-21
+
+Implemented in the payment-lifecycle migration and `PaymentService`, `LedgerService`, `OutboxService`, and `src/workers`:
+
+- Durable payment/refund operations and processor attempts, stable provider keys, recoverable leases and unknown-outcome recovery.
+- Scoped operation idempotency with request-conflict detection and canonical replay.
+- Integer minor units and exact posting arithmetic; balanced-journal constraints and append-only history guards.
+- Atomic operation finalization, journal entries and versioned outbox insertion.
+- Partial refund capacity reservation, linked reversal journals and definitive-failure release.
+- Outbox claims, backoff, terminal delivery failure/requeue, a durable PostgreSQL inbox and a deduplicated activity consumer.
+- Updated API contracts, compiled Swagger documentation, startup/shutdown handling and separate API/worker Compose services.
+
+The accounting model remains provider holding -> platform revenue. The inbox is a demo transport, not an external broker. Reconciliation remains a balance comparison, not settlement matching. Webhooks, projections, full observability, property/load experiments and frontend work remain open.
+
+Standing user instruction: do not create or modify tests without an explicit request. Existing test files from the earlier implementation are retained. Routine follow-up verification uses build, lint and schema/configuration checks; CI does not automatically run tests.
 
 ## 1. Current implementation and conventions
 
@@ -67,13 +83,13 @@ Exit: a fresh checkout can migrate a disposable DB and execute at least one mean
 
 ### Milestone 1 — Financial model and journal invariants
 
-- [ ] Model payment, processor attempt, refund, journal and journal-entry identities and relationships. Separate payment lifecycle from immutable posted financial history.
-- [ ] Make system-account identity unique within its intended scope, including currency; handle concurrent creation.
-- [ ] Implement exact minor-unit arithmetic throughout requests, processor contracts, persistence, aggregates and responses.
+- [x] Model payment, processor attempt, refund, journal and journal-entry identities and relationships. Separate payment lifecycle from immutable posted financial history.
+- [x] Make system-account identity unique within its intended scope, including currency; handle concurrent creation.
+- [x] Implement exact minor-unit arithmetic throughout requests, processor contracts, persistence, aggregates and responses.
 - [ ] Reject empty journals, invalid amounts, negative sides, both-sided/zero entries, currency mismatches and unbalanced totals. Define whether journal amount equals total debits for the supported posting model.
 - [ ] Enforce row-local rules with DB constraints. Design a commit-time cross-entry balance check or controlled posting boundary; an ordinary row CHECK cannot sum sibling rows.
 - [ ] Enforce append-only posted history through DB permissions/guards, including transaction metadata that affects financial meaning. Test using the application DB role.
-- [ ] Give each payment/refund operation at most one journal via durable relational/unique constraints; link reversals to original postings.
+- [x] Give each payment/refund operation at most one journal via durable relational/unique constraints; link reversals to original postings.
 - [ ] Derive balances with an explicit normal-balance convention and consistent currency. Make entries-plus-balance responses use a coherent read snapshot where required.
 - [ ] Plan data migration explicitly if existing financial rows must be preserved; do not rewrite applied migrations or silently reset data.
 
@@ -82,13 +98,13 @@ Exit: direct SQL and service-level tests prove rejection of invalid postings; va
 ### Milestone 2 — Payment lifecycle and durable idempotency
 
 - [ ] Define permitted payment/attempt transitions, including declined and unknown processor outcomes. Guard transitions in the database operation, not only an earlier read.
-- [ ] Introduce typed deterministic mock results: success, decline, transient error, timeout before execution, timeout after successful execution and lookup of prior result.
+- [x] Introduce typed deterministic mock results: success, decline, timeout before execution, timeout after successful execution and lookup of prior result. Transport exceptions remain unknown/recoverable outcomes.
 - [ ] Claim scoped HTTP operations atomically with PostgreSQL uniqueness; compare normalized request fingerprints and handle unique-conflict races deliberately.
 - [ ] Persist result/replay semantics durably with the business operation where possible; define recovery for interrupted claims. A timestamp expiring must not itself authorize a second charge.
-- [ ] Persist a processor attempt before calling the provider; send a stable provider idempotency key and retain provider references/outcomes.
-- [ ] Keep network calls outside long-lived DB transactions. Recover unknown outcomes by lookup or replay using the same provider key.
-- [ ] Finalize successful payment state and its journal in one DB transaction. Make posting accept that transaction context.
-- [ ] Add bounded retries only for classified transient transaction failures; never put an unprotected external charge inside a retried DB closure.
+- [x] Persist a processor attempt before calling the provider; send a stable provider idempotency key and retain provider references/outcomes.
+- [x] Keep network calls outside long-lived DB transactions. Recover unknown outcomes by lookup or replay using the same provider key.
+- [x] Finalize successful payment state and its journal in one DB transaction. Make posting accept that transaction context.
+- [x] Add bounded retries only for classified transient transaction failures; never put an unprotected external charge inside a retried DB closure.
 - [ ] Test lost HTTP response after successful commit, simultaneous same-key requests, different-key/same-payment requests, changed payload, worker restart and conflicting callbacks.
 
 Exit: one logical payment has one external charge and one journal under retry; unknown outcomes remain visibly recoverable instead of being declared failed or successful without evidence.
@@ -96,10 +112,10 @@ Exit: one logical payment has one external charge and one journal under retry; u
 ### Milestone 3 — Refund lifecycle and contention correctness
 
 - [ ] Validate original successful payment, provider, currency, refund policy and positive amount before issuing refunds.
-- [ ] Allocate a distinct idempotent refund identity for each partial refund and link its reversal journal to the original payment.
-- [ ] Reserve refundable capacity atomically; successful plus active reserved refunds must not exceed captured amount. Keep unknown external outcomes reserved until resolved.
+- [x] Allocate a distinct idempotent refund identity for each partial refund and link its reversal journal to the original payment.
+- [x] Reserve refundable capacity atomically; successful plus active reserved refunds must not exceed captured amount. Keep unknown external outcomes reserved until resolved.
 - [ ] Choose row locking or conditional atomic updates for refund reservation; define deterministic lock ordering where multiple rows are involved.
-- [ ] Atomically finalize refund state, reserved/consumed capacity and reversal journal; release capacity only on a definitive failure.
+- [x] Atomically finalize refund state, reserved/consumed capacity and reversal journal; release capacity only on a definitive failure.
 - [ ] Use barriers to race two refunds that each fit independently but exceed remaining capacity together. Assert external calls and all persisted rows, not only HTTP responses.
 - [ ] Build separate educational isolation experiments for lost updates and write skew. Specify transaction schedules and invariants for READ COMMITTED, REPEATABLE READ and SERIALIZABLE.
 - [ ] Implement bounded serializable retry tests and compare strategies on the same workload and financial invariant.
@@ -108,11 +124,11 @@ Exit: concurrent partial refunds cannot exceed captured funds, cannot post twice
 
 ### Milestone 4 — Outbox, consumer deduplication and webhooks
 
-- [ ] Insert a versioned outbox event in the same transaction as successful payment/refund completion and journal posting.
-- [ ] Implement bounded publisher batches, concurrent-worker claims, crash-recoverable leases, retry/backoff with jitter and observable pending/failed state.
+- [x] Insert a versioned outbox event in the same transaction as successful payment/refund completion and journal posting.
+- [x] Implement bounded publisher batches, concurrent-worker claims, crash-recoverable leases, retry/backoff with jitter and observable pending/failed state.
 - [ ] Choose and document a durable broker/delivery mechanism; define ACK, redelivery and retention behavior before integrating it. Redis is optional and is not the correctness authority.
 - [ ] Mark publication only after broker confirmation; preserve stable event IDs across retries. Prove the publish-before-mark crash produces safe duplicate delivery.
-- [ ] Add consumer deduplication unique on `(consumer, eventId)`; commit the dedup record and local business effect in one DB transaction, then ACK.
+- [x] Add consumer deduplication unique on `(consumer, eventId)`; commit the dedup record and local business effect in one DB transaction, then ACK. Current implementation uses an inbox acknowledgment in the same transaction.
 - [ ] For remote effects, create a durable delivery job first. A processed-events row alone cannot atomically protect an external HTTP side effect.
 - [ ] Implement webhook delivery records, stable delivery IDs, attempt history, timeouts, bounded exponential backoff/jitter, terminal failures and audited replay.
 - [ ] Define webhook signing and endpoint policy appropriate to scope; retry to a controlled mock receiver in tests.

@@ -7,7 +7,9 @@ import { specs } from "./config/swagger";
 
 const app = express();
 
-app.set("json replacer", (_key: string, value: unknown) => typeof value === "bigint" ? value.toString() : value);
+app.set("json replacer", (_key: string, value: unknown) =>
+  typeof value === "bigint" ? value.toString() : value,
+);
 
 app.use(express.json());
 app.use(cors());

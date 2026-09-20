@@ -14,7 +14,11 @@ export async function serializable<T>(
         timeout: 10000,
       });
     } catch (error) {
-      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2034" || attempt >= 7) {
+      if (
+        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+        error.code !== "P2034" ||
+        attempt >= 7
+      ) {
         throw error;
       }
       await setTimeout(Math.min(250, 10 * 2 ** attempt) + Math.random() * 20);

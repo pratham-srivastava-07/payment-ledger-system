@@ -8,22 +8,40 @@ export class PaymentController {
 
   createPayment = async (req: Request, res: Response) => {
     this.validateBody(req.body);
-    const result = await this.paymentService.processPayment(req.body, res.locals.idempotencyKey, res.locals.subject);
+    const result = await this.paymentService.processPayment(
+      req.body,
+      res.locals.idempotencyKey,
+      res.locals.subject,
+    );
     res.status(this.resultStatus(result.status)).json(result);
   };
 
   refundPayment = async (req: Request, res: Response) => {
     this.validateBody(req.body);
-    const result = await this.paymentService.processRefund(req.body, res.locals.idempotencyKey, res.locals.subject);
+    const result = await this.paymentService.processRefund(
+      req.body,
+      res.locals.idempotencyKey,
+      res.locals.subject,
+    );
     res.status(this.resultStatus(result.status)).json(result);
   };
 
   getPayment = async (req: Request, res: Response) => {
-    res.json(await this.paymentService.getPayment(identifier(req.params.id, "paymentId"), res.locals.subject));
+    res.json(
+      await this.paymentService.getPayment(
+        identifier(req.params.id, "paymentId"),
+        res.locals.subject,
+      ),
+    );
   };
 
   getRefund = async (req: Request, res: Response) => {
-    res.json(await this.paymentService.getRefund(identifier(req.params.id, "refundId"), res.locals.subject));
+    res.json(
+      await this.paymentService.getRefund(
+        identifier(req.params.id, "refundId"),
+        res.locals.subject,
+      ),
+    );
   };
 
   private resultStatus(status: string) {
@@ -31,9 +49,18 @@ export class PaymentController {
   }
 
   private validateBody(body: unknown) {
-    if (!body || typeof body !== "object" || Array.isArray(body)) throw new DomainError("INVALID_BODY", "A JSON object is required");
-    if ("amount" in body) throw new DomainError("AMOUNT_CONTRACT_CHANGED", "Use amountMinor in integer minor units; amount is no longer accepted");
-    if ("scenario" in body && body.scenario !== "SUCCESS" && process.env.ALLOW_MOCK_SCENARIOS !== "true") {
+    if (!body || typeof body !== "object" || Array.isArray(body))
+      throw new DomainError("INVALID_BODY", "A JSON object is required");
+    if ("amount" in body)
+      throw new DomainError(
+        "AMOUNT_CONTRACT_CHANGED",
+        "Use amountMinor in integer minor units; amount is no longer accepted",
+      );
+    if (
+      "scenario" in body &&
+      body.scenario !== "SUCCESS" &&
+      process.env.ALLOW_MOCK_SCENARIOS !== "true"
+    ) {
       throw new DomainError("SCENARIOS_DISABLED", "Mock failure scenarios are disabled", 403);
     }
   }

@@ -10,7 +10,10 @@ export function fingerprint(values: unknown[]): string {
 
 export function identifier(value: unknown, name: string): string {
   if (typeof value !== "string" || !/^[a-zA-Z0-9_.:-]{1,128}$/.test(value)) {
-    throw new DomainError("INVALID_IDENTIFIER", `${name} must contain 1-128 letters, digits, _, ., : or -`);
+    throw new DomainError(
+      "INVALID_IDENTIFIER",
+      `${name} must contain 1-128 letters, digits, _, ., : or -`,
+    );
   }
   return value;
 }

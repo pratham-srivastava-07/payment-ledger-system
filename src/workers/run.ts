@@ -9,8 +9,12 @@ const payments = new PaymentService();
 const publisher = new OutboxPublisher();
 const consumer = new ActivityConsumer();
 let stopping = false;
-process.on("SIGINT", () => { stopping = true; });
-process.on("SIGTERM", () => { stopping = true; });
+process.on("SIGINT", () => {
+  stopping = true;
+});
+process.on("SIGTERM", () => {
+  stopping = true;
+});
 
 async function run() {
   try {
@@ -21,8 +25,13 @@ async function run() {
         ["outbox", () => publisher.publishBatch()],
         ["consumer", () => consumer.consumeBatch()],
       ] as const) {
-        try { await task(); }
-        catch (error) { console.error(JSON.stringify({ event: "worker_error", worker: name, error: String(error) })); }
+        try {
+          await task();
+        } catch (error) {
+          console.error(
+            JSON.stringify({ event: "worker_error", worker: name, error: String(error) }),
+          );
+        }
       }
       if (process.argv.includes("--once")) break;
       if (!stopping) await setTimeout(1000);
@@ -32,4 +41,7 @@ async function run() {
   }
 }
 
-run().catch((error) => { console.error(error); process.exitCode = 1; });
+run().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

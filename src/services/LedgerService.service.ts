@@ -19,25 +19,41 @@ export class LedgerService {
   async recordTransaction(tx: Prisma.TransactionClient, data: JournalInput) {
     parseMinor(data.amountMinor);
     parseCurrency(data.currency);
-    if (data.entries.length < 2) throw new DomainError("INVALID_JOURNAL", "At least two entries are required");
+    if (data.entries.length < 2)
+      throw new DomainError("INVALID_JOURNAL", "At least two entries are required");
     let debit = 0n;
     let credit = 0n;
     for (const entry of data.entries) {
       if (
-        entry.debitMinor < 0n || entry.creditMinor < 0n ||
-        entry.debitMinor > MAX_MINOR || entry.creditMinor > MAX_MINOR ||
-        (entry.debitMinor > 0n) === (entry.creditMinor > 0n)
-      ) throw new DomainError("INVALID_JOURNAL", "Each entry requires exactly one positive debit or credit");
+        entry.debitMinor < 0n ||
+        entry.creditMinor < 0n ||
+        entry.debitMinor > MAX_MINOR ||
+        entry.creditMinor > MAX_MINOR ||
+        entry.debitMinor > 0n === entry.creditMinor > 0n
+      )
+        throw new DomainError(
+          "INVALID_JOURNAL",
+          "Each entry requires exactly one positive debit or credit",
+        );
       debit += entry.debitMinor;
       credit += entry.creditMinor;
     }
     if (debit !== credit || debit !== data.amountMinor) {
-      throw new DomainError("UNBALANCED_JOURNAL", "Debits and credits must both equal the journal amount");
+      throw new DomainError(
+        "UNBALANCED_JOURNAL",
+        "Debits and credits must both equal the journal amount",
+      );
     }
     const ids = [...new Set(data.entries.map((entry) => entry.accountId))];
     const accounts = await tx.account.findMany({ where: { id: { in: ids } } });
-    if (accounts.length !== ids.length || accounts.some((account) => account.currency !== data.currency)) {
-      throw new DomainError("INVALID_ACCOUNT", "All accounts must exist and use the journal currency");
+    if (
+      accounts.length !== ids.length ||
+      accounts.some((account) => account.currency !== data.currency)
+    ) {
+      throw new DomainError(
+        "INVALID_ACCOUNT",
+        "All accounts must exist and use the journal currency",
+      );
     }
     return tx.transaction.create({
       data: {
@@ -53,7 +69,12 @@ export class LedgerService {
     });
   }
 
-  async getSystemAccount(tx: Prisma.TransactionClient, type: AccountType, name: string, currency: string) {
+  async getSystemAccount(
+    tx: Prisma.TransactionClient,
+    type: AccountType,
+    name: string,
+    currency: string,
+  ) {
     return tx.account.upsert({
       where: { type_name_currency: { type, name, currency } },
       create: { type, name, currency },
@@ -61,7 +82,10 @@ export class LedgerService {
     });
   }
 
-  async getAccountBalance(accountId: string, tx: Prisma.TransactionClient = this.db): Promise<bigint> {
+  async getAccountBalance(
+    accountId: string,
+    tx: Prisma.TransactionClient = this.db,
+  ): Promise<bigint> {
     const account = await tx.account.findUnique({ where: { id: accountId } });
     if (!account) throw new DomainError("ACCOUNT_NOT_FOUND", "Account not found", 404);
     const sum = await tx.ledgerEntry.aggregate({
@@ -73,15 +97,20 @@ export class LedgerService {
   }
 
   async getLedgerForAccount(accountId: string) {
-    return this.db.$transaction(async (tx) => {
-      const account = await tx.account.findUnique({ where: { id: accountId } });
-      if (!account) throw new DomainError("ACCOUNT_NOT_FOUND", "Account not found", 404);
-      const balanceMinor = await this.getAccountBalance(accountId, tx);
-      const entries = await tx.ledgerEntry.findMany({
-        where: { accountId }, include: { transaction: true },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100,
-      });
-      return { accountId, currency: account.currency, balanceMinor, entries, limit: 100 };
-    }, { isolationLevel: "RepeatableRead" });
+    return this.db.$transaction(
+      async (tx) => {
+        const account = await tx.account.findUnique({ where: { id: accountId } });
+        if (!account) throw new DomainError("ACCOUNT_NOT_FOUND", "Account not found", 404);
+        const balanceMinor = await this.getAccountBalance(accountId, tx);
+        const entries = await tx.ledgerEntry.findMany({
+          where: { accountId },
+          include: { transaction: true },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: 100,
+        });
+        return { accountId, currency: account.currency, balanceMinor, entries, limit: 100 };
+      },
+      { isolationLevel: "RepeatableRead" },
+    );
   }
 }

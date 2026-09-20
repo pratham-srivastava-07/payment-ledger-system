@@ -12,16 +12,23 @@ export const MAX_MINOR = 9223372036854775807n;
 
 export function parseMinor(value: unknown): bigint {
   if (typeof value === "number" && (!Number.isSafeInteger(value) || value <= 0)) {
-    throw new DomainError("INVALID_AMOUNT", "amountMinor must be a positive safe integer or digit string");
+    throw new DomainError(
+      "INVALID_AMOUNT",
+      "amountMinor must be a positive safe integer or digit string",
+    );
   }
   if (
     !(typeof value === "number" || typeof value === "string" || typeof value === "bigint") ||
     !/^[1-9][0-9]*$/.test(String(value))
   ) {
-    throw new DomainError("INVALID_AMOUNT", "amountMinor must be a positive integer in minor units");
+    throw new DomainError(
+      "INVALID_AMOUNT",
+      "amountMinor must be a positive integer in minor units",
+    );
   }
   const amount = BigInt(value);
-  if (amount > MAX_MINOR) throw new DomainError("INVALID_AMOUNT", "amountMinor exceeds int64 range");
+  if (amount > MAX_MINOR)
+    throw new DomainError("INVALID_AMOUNT", "amountMinor exceeds int64 range");
   return amount;
 }
 

@@ -15,13 +15,19 @@ export class ActivityConsumer {
         if (!event) return false;
         if (event.version !== 1) throw new Error(`Unsupported event version: ${event.version}`);
         const claim = await tx.processedEvent.createMany({
-          data: [{ consumer: "system-activity-v1", eventId: event.id }], skipDuplicates: true,
+          data: [{ consumer: "system-activity-v1", eventId: event.id }],
+          skipDuplicates: true,
         });
-        if (claim.count) await tx.systemActivity.create({ data: {
-          eventId: event.id, eventType: event.eventType,
-          aggregateType: event.aggregateType, aggregateId: event.aggregateId,
-          payload: event.payload as Prisma.InputJsonValue,
-        } });
+        if (claim.count)
+          await tx.systemActivity.create({
+            data: {
+              eventId: event.id,
+              eventType: event.eventType,
+              aggregateType: event.aggregateType,
+              aggregateId: event.aggregateId,
+              payload: event.payload as Prisma.InputJsonValue,
+            },
+          });
         // Local effect, deduplication and ACK share one transaction.
         await tx.inboxEvent.update({ where: { id: event.id }, data: { consumedAt: new Date() } });
         return true;

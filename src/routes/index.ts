@@ -10,6 +10,7 @@ import { IdempotencyMiddleware } from "../middlewares/idempotency";
 import { prisma } from "../config/prisma";
 import { OutboxPublisher } from "../workers/outboxPublisher";
 import { identifier } from "../domain/operation";
+import { consoleRouter } from "./console.route";
 
 const router = Router();
 
@@ -25,6 +26,7 @@ const reconciliationController = new ReconciliationController(reconciliationServ
 // middlewares
 const authMiddleware = AuthMiddleware.verifyToken;
 const idempotencyMiddleware = IdempotencyMiddleware.checkIdempotency;
+router.use("/console", authMiddleware, consoleRouter);
 
 // Routes
 router.post("/payments", authMiddleware, idempotencyMiddleware, paymentController.createPayment);
@@ -35,7 +37,11 @@ router.get("/refunds/:id", authMiddleware, paymentController.getRefund);
 router.get("/ledger/:accountId", authMiddleware, ledgerController.getLedgerForAccount);
 
 router.get("/reconciliation/report", authMiddleware, reconciliationController.getLatestReport);
-router.post("/reconciliation/trigger", authMiddleware, reconciliationController.triggerReconciliation);
+router.post(
+  "/reconciliation/trigger",
+  authMiddleware,
+  reconciliationController.triggerReconciliation,
+);
 
 // Tokens represent trusted operators; ledger and delivery diagnostics are system-wide.
 router.get("/outbox", authMiddleware, async (_req, res) => {

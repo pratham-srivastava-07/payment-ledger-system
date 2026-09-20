@@ -11,5 +11,10 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
     return;
   }
   console.error(JSON.stringify({ event: "request_error", error: String(error) }));
-  res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Request failed; retry using the same idempotency key" } });
+  res.status(500).json({
+    error: {
+      code: "INTERNAL_ERROR",
+      message: "Request failed; retry using the same idempotency key",
+    },
+  });
 };

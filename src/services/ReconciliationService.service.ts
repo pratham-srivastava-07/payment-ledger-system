@@ -16,12 +16,15 @@ export class ReconciliationService {
       where: { type_name_currency: { type: "PROVIDER", name: `${provider}_HOLDING`, currency } },
     });
     const expectedBalance = account ? await this.ledgerService.getAccountBalance(account.id) : 0n;
-    const report = await prisma.reconciliationReport.create({ data: {
-      provider, currency,
-      expectedBalance: new Prisma.Decimal(expectedBalance.toString()),
-      actualBalance: new Prisma.Decimal(actualBalance.toString()),
-      discrepancy: new Prisma.Decimal((actualBalance - expectedBalance).toString()),
-    } });
+    const report = await prisma.reconciliationReport.create({
+      data: {
+        provider,
+        currency,
+        expectedBalance: new Prisma.Decimal(expectedBalance.toString()),
+        actualBalance: new Prisma.Decimal(actualBalance.toString()),
+        discrepancy: new Prisma.Decimal((actualBalance - expectedBalance).toString()),
+      },
+    });
     return { ...report, unit: "minor", currencyExponent: currencyExponents[currency] };
   }
 
