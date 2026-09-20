@@ -60,6 +60,7 @@ export class ReconciliationController {
       }
       const result = await this.reconciliationService.performReconciliation(
         provider as PaymentProvider,
+        req.body.currency ?? "USD",
       );
       res.json(result);
     } catch (error: any) {

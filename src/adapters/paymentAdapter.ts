@@ -1,19 +1,26 @@
 import { PaymentProvider } from "@prisma/client";
+import { Scenario } from "../domain/operation";
 
 export interface ChargeData {
-  amount: number;
+  amountMinor: bigint;
   currency: string;
-  description?: string;
+  idempotencyKey: string;
+  scenario: Scenario;
+  invocation: number;
 }
 
-export interface RefundData {
-  paymentId: string;
-  amount: number;
+export interface RefundData extends ChargeData {
+  originalExternalRef: string;
 }
+
+export type ProcessorResult =
+  | { status: "SUCCEEDED"; externalRef: string }
+  | { status: "FAILED"; externalRef: string; error: string };
 
 export interface PaymentAdapter {
-  charge(data: ChargeData): Promise<any>;
-  refund(data: RefundData): Promise<any>;
-  fetchBalance(): Promise<number>;
+  charge(data: ChargeData): Promise<ProcessorResult>;
+  refund(data: RefundData): Promise<ProcessorResult>;
+  lookup(idempotencyKey: string): Promise<ProcessorResult | null>;
+  fetchBalance(currency: string): Promise<bigint>;
   getProvider(): PaymentProvider;
 }

@@ -17,34 +17,30 @@ enum AccountType {
 enum PaymentStatus {
   CREATED
   PROCESSING
-  SUCCEDDED
-  FAILED 
+  SUCCEEDED
+  FAILED
   UNKNOWN
 }
 
- enum OutboxEventType {
-    PAYMENT_CREATED
-    PAYMENT_SUCCEEDED
-    PAYMENT_FAILED
-    REFUND_CREATED
-    REFUND_SUCCEEDED
-    REFUND_FAILED
-    LEDGER_POSTED
-    RECONCILIATION_COMPLETED
-  }
-
-enum ProcessorAttempt {
-  SUCCESS
-  FAILED
+enum ProcessorAttemptStatus {
   CREATED
+  SUCCEEDED
+  FAILED
   UNKNOWN
+}
+
+enum OutboxEventType {
+  PAYMENT_SUCCEEDED
+  PAYMENT_FAILED
+  REFUND_SUCCEEDED
+  REFUND_FAILED
 }
 
 enum OutboxStatus {
-    PENDING
-    PUBLISHED
-    FAILED
-  }
+  PENDING
+  PUBLISHED
+  FAILED
+}
 
 enum TransactionType {
   PAYMENT
@@ -59,9 +55,11 @@ enum TransactionStatus {
 }
 
 enum RefundStatus {
-  SUCCESS
+  CREATED
   PROCESSING
+  SUCCEEDED
   FAILED
+  UNKNOWN
 }
 
 enum PaymentProvider {
@@ -71,54 +69,56 @@ enum PaymentProvider {
 }
 
 model Account {
-  id        String      @id @default(uuid())
-  name      String
-  type      AccountType
-  currency  String
-  createdAt DateTime    @default(now())
-
+  id            String        @id @default(uuid())
+  name          String
+  type          AccountType
+  currency      String
+  createdAt     DateTime      @default(now())
   ledgerEntries LedgerEntry[]
+
+  @@unique([type, name, currency])
 }
 
 model Transaction {
-  id          String            @id @default(uuid())
-  externalRef String?           @unique
-  type        TransactionType
-  paymentId   String
-  payment     Payment?     
-  refund      Refund?
-  status      TransactionStatus @default(PENDING)
-  amount      Decimal
-  currency    String
-  createdAt   DateTime          @default(now())
+  id           String            @id @default(uuid())
+  externalRef  String?           @unique
+  type         TransactionType
+  payment      Payment?
+  refund       Refund?
+  status       TransactionStatus @default(COMPLETED)
+  amountMinor  BigInt            @map("amount")
+  currency     String
+  reversalOfId String?
+  reversalOf   Transaction?      @relation("Reversals", fields: [reversalOfId], references: [id])
+  reversals    Transaction[]     @relation("Reversals")
+  createdAt    DateTime          @default(now())
+  entries      LedgerEntry[]
 
-  entries LedgerEntry[]
+  @@index([reversalOfId])
 }
 
 model LedgerEntry {
-  id            String @id @default(uuid())
+  id            String      @id @default(uuid())
   transactionId String
   accountId     String
-
-  debit  Decimal @default(0)
-  credit Decimal @default(0)
-
-  createdAt DateTime @default(now())
-
-  transaction Transaction @relation(fields: [transactionId], references: [id])
-  account     Account     @relation(fields: [accountId], references: [id])
+  debitMinor    BigInt      @default(0) @map("debit")
+  creditMinor   BigInt      @default(0) @map("credit")
+  createdAt     DateTime    @default(now())
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  account       Account     @relation(fields: [accountId], references: [id])
 
   @@index([transactionId])
   @@index([accountId])
 }
 
+// Retained for legacy data. New orchestration uses Payment/Refund/ProcessorAttempt.
 model PaymentEvent {
   id              String          @id @default(uuid())
   provider        PaymentProvider
   externalEventId String          @unique
   idempotencyKey  String          @unique
   payload         Json
-  status          String          @default("RECEIVED") // RECEIVED, PROCESSED, FAILED
+  status          String          @default("RECEIVED")
   processed       Boolean         @default(false)
   createdAt       DateTime        @default(now())
 
@@ -128,69 +128,154 @@ model PaymentEvent {
 model ReconciliationReport {
   id              String          @id @default(uuid())
   provider        PaymentProvider
+  currency        String          @default("USD")
   expectedBalance Decimal
   actualBalance   Decimal
   discrepancy     Decimal
   createdAt       DateTime        @default(now())
 }
 
-
+// Retained for legacy data; HTTP replay now reads the durable operation itself.
 model Idempotency {
-  key             String   @id
+  key             String    @id
   requestPath     String
   requestBodyHash String
   responseStatus  Int?
   responseJson    Json?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
   lockedAt        DateTime?
 }
 
 model Payment {
-  id    String   @id @unique
-  idempotencyKey  String   @unique
-  amountMinor    Float  
-  currency      String 
-  provider      PaymentProvider
-  status       PaymentStatus
+  id                  String             @id @default(uuid())
+  scope               String
+  idempotencyKey      String
+  requestHash         String
+  amountMinor         BigInt
+  currency            String
+  provider            PaymentProvider
+  scenario            String             @default("SUCCESS")
+  status              PaymentStatus      @default(CREATED)
   processingAttempts  ProcessorAttempt[]
-  refunds         Refund[]
-  ledgerTransactionId  String?         @unique
-  ledgerTransaction    Transaction?    @relation(fields: [ledgerTransactionId], references: [id])
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime
+  refunds             Refund[]
+  ledgerTransactionId String?            @unique
+  ledgerTransaction   Transaction?       @relation(fields: [ledgerTransactionId], references: [id])
+  leaseToken          String?
+  leaseUntil          DateTime?
+  nextAttemptAt       DateTime           @default(now())
+  lastError           String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@unique([scope, idempotencyKey])
+  @@index([status, nextAttemptAt])
 }
 
 model Refund {
-  id             String      @id @unique @default(uuid())
-  paymentId      String     
-  payment        Payment   @relation(fields: [paymentId], references: [id])
-  amountMinor    BigInt
-  status         RefundStatus
-  ledgerTransactionId     String?    @unique
-  ledgerTransaction   Transaction?     @relation(fields: [ledgerTransactionId], references: [id])
-  createdAt          DateTime
+  id                  String             @id @default(uuid())
+  scope               String
+  idempotencyKey      String
+  requestHash         String
+  paymentId           String
+  payment             Payment            @relation(fields: [paymentId], references: [id])
+  amountMinor         BigInt
+  scenario            String             @default("SUCCESS")
+  status              RefundStatus       @default(CREATED)
+  processingAttempts  ProcessorAttempt[]
+  ledgerTransactionId String?            @unique
+  ledgerTransaction   Transaction?       @relation(fields: [ledgerTransactionId], references: [id])
+  leaseToken          String?
+  leaseUntil          DateTime?
+  nextAttemptAt       DateTime           @default(now())
+  lastError           String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@unique([scope, idempotencyKey])
+  @@index([paymentId, status])
+  @@index([status, nextAttemptAt])
 }
 
+model ProcessorAttempt {
+  id                     String                 @id @default(uuid())
+  paymentId              String?                @unique
+  payment                Payment?               @relation(fields: [paymentId], references: [id])
+  refundId               String?                @unique
+  refund                 Refund?                @relation(fields: [refundId], references: [id])
+  provider               PaymentProvider
+  providerIdempotencyKey String                 @unique
+  externalRef            String?
+  status                 ProcessorAttemptStatus @default(CREATED)
+  invocations            Int                    @default(0)
+  lastError              String?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+}
+
+// Simulates the provider's separate durable state. Never written inside ledger finalization.
+model MockProcessorOperation {
+  id          String          @id
+  provider    PaymentProvider
+  kind        String
+  requestHash String
+  amountMinor BigInt
+  currency    String
+  externalRef String          @unique
+  outcome     String
+  createdAt   DateTime        @default(now())
+}
 
 model OutboxEvent {
-    id            String          @id @default(uuid())
+  id            String          @id @default(uuid())
+  eventType     OutboxEventType
+  version       Int             @default(1)
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  status        OutboxStatus    @default(PENDING)
+  attempts      Int             @default(0)
+  availableAt   DateTime        @default(now())
+  leaseToken    String?
+  leaseUntil    DateTime?
+  publishedAt   DateTime?
+  lastError     String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
-    eventType     OutboxEventType
-    aggregateType String
-    aggregateId   String
+  @@unique([aggregateType, aggregateId, eventType])
+  @@index([status, availableAt])
+}
 
-    payload       Json
+// Durable demo transport. A brker can replace this without changing the outbox writer.
+model InboxEvent {
+  id            String    @id
+  eventType     String
+  version       Int
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  receivedAt    DateTime  @default(now())
+  consumedAt    DateTime?
 
-    status        OutboxStatus    @default(PENDING)
-    attempts      Int             @default(0)
-    availableAt   DateTime        @default(now())
-    publishedAt   DateTime?
-    lastError     String?
+  @@index([consumedAt, receivedAt])
+}
 
-    createdAt     DateTime        @default(now())
-    updatedAt     DateTime        @updatedAt
+model ProcessedEvent {
+  consumer    String
+  eventId     String
+  processedAt DateTime @default(now())
 
-    @@index([status, availableAt])
-    @@index([aggregateType, aggregateId])
-    @@index([eventType, createdAt])
-  }
+  @@id([consumer, eventId])
+}
+
+model SystemActivity {
+  id            String   @id @default(uuid())
+  eventId       String   @unique
+  eventType     String
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+}
